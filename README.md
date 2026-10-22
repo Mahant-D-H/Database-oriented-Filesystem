@@ -32,7 +32,7 @@ This project instead provides a small set of explicit primitives:
 These are building blocks for a database storage engine, not a replacement for
 an established filesystem or database engine.
 
-## Architecture
+## Architecture Diagram
 
 
 ![Photo](Architecture.png)
