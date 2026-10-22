@@ -81,6 +81,14 @@ add_executable(wal-recovery-edges tests/wal_recovery_edges.cpp)
 target_link_libraries(wal-recovery-edges PRIVATE filesystem_core)
 target_compile_options(wal-recovery-edges PRIVATE -Wall -Wextra -Wpedantic)
 
+add_executable(database-workload tests/database_workload.cpp)
+target_link_libraries(database-workload PRIVATE filesystem_core)
+target_compile_options(database-workload PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(database-benchmark benchmarks/database_benchmark.cpp)
+target_link_libraries(database-benchmark PRIVATE filesystem_core)
+target_compile_options(database-benchmark PRIVATE -Wall -Wextra -Wpedantic)
+
 include(CTest)
 if (BUILD_TESTING)
     add_test(NAME test-async-io COMMAND async-io)
@@ -93,6 +101,7 @@ if (BUILD_TESTING)
     add_test(NAME test-core-worker-pool COMMAND core-worker-pool)
     add_test(NAME test-block-device COMMAND block-device)
     add_test(NAME test-wal-recovery-edges COMMAND wal-recovery-edges)
+    add_test(NAME test-database-workload COMMAND database-workload)
     set_tests_properties(
         test-async-io
         test-extent
@@ -104,6 +113,7 @@ if (BUILD_TESTING)
         test-core-worker-pool
         test-block-device
         test-wal-recovery-edges
+        test-database-workload
         PROPERTIES RUN_SERIAL TRUE TIMEOUT 90
     )
 endif()

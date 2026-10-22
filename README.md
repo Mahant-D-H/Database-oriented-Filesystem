@@ -10,12 +10,6 @@ part of the storage API rather than hidden behind ordinary files. It currently
 operates on a regular file used as a disk image; it is **not** a kernel
 filesystem and does not mount or implement POSIX paths and file operations.
 
-> **Project status:** This is an educational and experimental C++20 project.
-> The block-device, metadata, storage-layout, and WAL components have executable
-> tests. The CPU-pinned worker pool is an early concurrency prototype, not a
-> production-ready parallel filesystem. Persistent allocation and WAL updates
-> remain single-writer.
-
 ## Why a database-oriented storage layer?
 
 Databases commonly manage their own page caches and I/O policies. A conventional
@@ -40,23 +34,9 @@ an established filesystem or database engine.
 
 ## Architecture
 
-```text
-Database or storage-engine code
-              |
-              v
-  FixedPageLayout / AppendOnlySegment / DenseArrayLayout
-              |
-     +--------+---------+
-     |                  |
-     v                  v
-Inode/extents       WAL transactions
-and bitmaps         + double-write zone
-     |                  |
-     +--------+---------+
-              |
-              v
- BlockDevice (disk image, 4 KiB blocks)
-```
+
+![Photo](Architecture.png)
+
 
 ### Block device and asynchronous I/O
 
@@ -86,6 +66,8 @@ The current format is version 3 and uses 4 KiB blocks. Its main regions are:
 | WAL | Fixed-size transaction records and page images |
 | Double-write zone | Stages page images before home-block writes |
 | Data region | Allocated extents and payload blocks |
+
+![Photo](Allocation.png)
 
 The WAL and double-write zone currently reserve 16 and 8 blocks, respectively.
 The allocator finds contiguous free ranges in the data bitmap; inode extents
@@ -215,8 +197,7 @@ auto reopened = fs::FixedPageLayout::open(device, superblock, page_inode);
 reopened.read_page(0, page);
 ```
 
-This illustrates the implemented C++ layout API; it is not a POSIX mount or a
-standalone database. Applications are responsible for storing the inode number
+This illustrates the implemented C++ layout API. Applications are responsible for storing the inode number
 and coordinating their own higher-level metadata and access policy.
 
 ## Build and run
@@ -253,39 +234,50 @@ ctest --test-dir build --output-on-failure
 
 The current CTest suite covers aligned asynchronous I/O, extent allocation,
 buffer-pool behavior, inode/extent metadata, storage layouts, WAL consistency,
-the tested crash-recovery boundary, and worker-pool behavior. The ten registered
-tests are marked serial because several existing fixtures use the shared
-`/tmp/test.img` path.
+the tested crash-recovery boundary, worker-pool behavior, and a bounded
+database-style fixed-page workload. The eleven registered tests are marked
+serial because several existing fixtures use the shared `/tmp/test.img` path.
+
+### Database storage benchmark
+
+Build and run the separate storage-layer benchmark:
+
+```sh
+cmake --build build --target database-benchmark
+./build/database-benchmark [page-count] [operation-count] [random-seed] [image-directory] [repetitions]
+```
+
+The defaults are 4,096 pages (16 MiB of page data), 1,024 operations per
+workload, seed `1592594996`, `/tmp` for temporary images, and five repetitions.
+The benchmark creates unique custom-filesystem and POSIX baseline images in the
+selected directory, reports the backing filesystem type, and removes its images
+on exit. Select a directory on the filesystem you intend to evaluate; both
+images are placed there. The sequential scan runs complete working-set passes
+until it covers at least the requested operation count.
+
+It measures sequential page writes, random page reads, random page updates,
+sequential scans, and a mixed workload. Each repetition uses the same
+deterministic operation plan for both backends, starts workloads from
+reference-verified page contents, and verifies results before accepting the
+measurements. Output includes each repetition and aggregate medians for
+throughput and p50/p95/p99 call latency. Initialization, warm-up, reset, and
+verification are excluded from timed intervals.
+
+The baseline uses buffered POSIX `pread()`/`pwrite()`; reads can be served from
+the OS page cache, and each timed write includes `fdatasync()`. The custom
+filesystem uses `FixedPageLayout` and `BlockDevice`, with its WAL and
+double-write commit path for page writes and direct I/O where supported.
+These paths have different caching and durability semantics and are not a
+perfectly equivalent comparison. POSIX runs first in each repetition, which
+can introduce execution-order bias; repetitions also do not eliminate cache
+state differences between buffered I/O and `O_DIRECT`. Results characterize
+these storage paths only and do not predict SQLite or PostgreSQL performance.
 
 `filesystem` is currently a bootstrap executable that directs users to the
 separate `filesystem-mkfs` and `filesystem-dumpfs` tools; it is not a mounted
 filesystem shell.
 
-## Implemented and verified
-
-- C++20 block-device access to regular-file images, with bounds checking,
-  alignment handling, flush support, and direct-I/O fallback.
-- A liburing request wrapper and asynchronous device read/write entry points.
-- An extent allocator that rejects out-of-range and overflowing requests and
-  validates a release before changing allocation state.
-- Version-3 metadata layout with mirrored checksummed superblocks, bitmaps,
-  inodes, extents, WAL, and double-write regions.
-- Contiguous extent allocation, inode allocation, and inline/indirect extent
-  persistence.
-- Fixed-page, append-only segment, and 2 MiB-aligned dense-array APIs.
-- A 2Q-inspired pinned buffer pool with background flush and explicit
-  `flush_all()` error reporting.
-- Single-writer WAL transactions, page-image checksums, double-write staging,
-  mount recovery, orphan-allocation reclamation, and an integration test for
-  recovery after a process kill at one committed-transaction boundary.
-- An experimental pinned worker pool with a per-worker I/O ring, task queue,
-  and in-memory extent shard.
-
-The statements above describe implemented code paths exercised by the current
-tests. They should not be interpreted as production performance claims or as
-comprehensive crash, concurrency, or hardware validation.
-
-### Test coverage
+## Tests
 
 Build and run all registered tests with:
 
@@ -294,7 +286,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-CTest registers ten executables:
+CTest registers eleven executables:
 
 | Test | Additional behavior checked |
 | --- | --- |
@@ -308,36 +300,10 @@ CTest registers ten executables:
 | `test-core-worker-pool` | Four concurrent producers submitting 1,024 tasks, worker affinity/shards, simultaneous execution, task exception propagation, and queued-task draining at destruction |
 | `test-block-device` | Partial and aligned I/O, close/reopen persistence, bounds rejection, and read-only write rejection |
 | `test-wal-recovery-edges` | Ignore incomplete transactions and reject committed transactions whose WAL and double-write page images both fail checksum validation |
+| `test-database-workload` | Deterministic sequential and random fixed-page writes/reads, overwrite validation, invalid-input rejection, and persistence after reopening |
 
 These are functional tests, not benchmarks or exhaustive stress/fault-injection
 tests. In particular, the worker-pool test exercises concurrent submission and
 task execution at a bounded workload; it does not prove formal lock-free
 progress or production behavior under sustained load. WAL crash injection still
 covers only selected recovery boundaries.
-
-## Limitations and next work
-
-- There is no kernel module, FUSE layer, mount support, POSIX directory/file
-  namespace, or complete filesystem command-line interface.
-- The WAL is fixed-capacity and single-writer; persistent metadata allocation
-  is not safe for concurrent writers.
-- Crash injection covers only a subset of the WAL/double-write/checkpoint
-  sequence. Additional injection points and recovery invariants are needed.
-- The worker pool needs stronger queue progress guarantees, explicit
-  backpressure/shutdown semantics, and high-load stress testing before it can
-  support concurrent filesystem mutations.
-- Several tests still use a shared `/tmp/test.img` fixture path; CTest therefore
-  runs them serially. Giving every fixture a unique temporary image would allow
-  safe parallel test execution.
-- Buffer-pool dirty flushing is not integrated with WAL ordering.
-- There are no benchmarks or verified throughput/latency claims in this
-  repository.
-
-## Repository map
-
-| Path | Contents |
-| --- | --- |
-| `include/fs/` | Public storage, metadata, layout, recovery, and worker APIs |
-| `src/` | Block device, async I/O, allocator, buffer pool, metadata, WAL, and worker implementations |
-| `tools/` | Image-formatting and metadata-inspection executables |
-| `tests/` | Standalone component tests and the CTest crash-recovery/worker tests |
