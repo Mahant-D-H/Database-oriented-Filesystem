@@ -1,1 +1,0 @@
-/usr/bin/c++ -g CMakeFiles/filesystem.dir/main.cpp.o -o filesystem  libfilesystem_core.a /usr/lib/x86_64-linux-gnu/liburing.so 

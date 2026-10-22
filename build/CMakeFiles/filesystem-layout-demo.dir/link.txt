@@ -1,1 +1,0 @@
-/usr/bin/c++ -g "CMakeFiles/filesystem-layout-demo.dir/demo/layout_demo.cpp.o" -o filesystem-layout-demo  libfilesystem_core.a /usr/lib/x86_64-linux-gnu/liburing.so 

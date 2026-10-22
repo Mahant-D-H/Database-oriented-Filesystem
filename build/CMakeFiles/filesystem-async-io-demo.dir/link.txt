@@ -1,1 +1,0 @@
-/usr/bin/c++ -g "CMakeFiles/filesystem-async-io-demo.dir/demo/async_io_demo.cpp.o" -o filesystem-async-io-demo  libfilesystem_core.a /usr/lib/x86_64-linux-gnu/liburing.so 

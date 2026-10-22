@@ -1,1 +1,0 @@
-/usr/bin/c++ -g "CMakeFiles/filesystem-dumpfs.dir/tools/dumpfs.cpp.o" -o filesystem-dumpfs  libfilesystem_core.a /usr/lib/x86_64-linux-gnu/liburing.so 

@@ -1,1 +1,0 @@
-/usr/bin/c++ -g "CMakeFiles/filesystem-mkfs.dir/tools/mkfs.cpp.o" -o filesystem-mkfs  libfilesystem_core.a /usr/lib/x86_64-linux-gnu/liburing.so 
